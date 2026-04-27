@@ -122,9 +122,9 @@ let state = {
 };
 let saveTimer = null;
 
-async function loadFromStorage() {
+function loadFromStorage() {
   try {
-    const result = await window.storage.get(STORAGE_KEY);
+    const result = await localStorage.getItem(STORAGE_KEY);
     if (result && result.value) state.roomData = JSON.parse(result.value);
   } catch(_) {}
 }
@@ -135,7 +135,7 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
-      await window.storage.set(STORAGE_KEY, JSON.stringify(state.roomData));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.roomData));
       state.saveStatus = "saved";
       renderHeader();
       setTimeout(() => { state.saveStatus = "idle"; renderHeader(); }, 2500);
@@ -200,7 +200,7 @@ async function resetAll() {
   state.roomData = {};
   state.selRoom = null;
   state.confirmReset = false;
-  try { await window.storage.delete(STORAGE_KEY); } catch(_) {}
+  try { localStorage.removeItem(STORAGE_KEY); } catch(_) {}
   render();
 }
 
