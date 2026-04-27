@@ -122,15 +122,11 @@ let state = {
 };
 let saveTimer = null;
 
-function loadFromStorage() {
+async function loadFromStorage() {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) state.roomData = JSON.parse(data);
-  } catch (e) {
-    console.error("Error cargando datos", e);
-  }
-}
-catch(_) {}
+    const result = await window.storage.get(STORAGE_KEY);
+    if (result && result.value) state.roomData = JSON.parse(result.value);
+  } catch(_) {}
 }
 
 function scheduleSave() {
@@ -139,7 +135,7 @@ function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.roomData));
+      await window.storage.set(STORAGE_KEY, JSON.stringify(state.roomData));
       state.saveStatus = "saved";
       renderHeader();
       setTimeout(() => { state.saveStatus = "idle"; renderHeader(); }, 2500);
@@ -204,7 +200,7 @@ async function resetAll() {
   state.roomData = {};
   state.selRoom = null;
   state.confirmReset = false;
-  try { localStorage.removeItem(STORAGE_KEY); } catch(_) {}
+  try { await window.storage.delete(STORAGE_KEY); } catch(_) {}
   render();
 }
 
@@ -494,7 +490,7 @@ function render() {
 (async () => {
   const app=document.getElementById("app");
   app.innerHTML=`<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--color-text-secondary)"><div style="width:36px;height:36px;border:3px solid var(--color-border-secondary);border-top:3px solid #c9a84c;border-radius:50%" class="spin"></div><div style="font-size:14px">Cargando datos guardados…</div></div>`;
-  loadFromStorage();
+  await loadFromStorage();
   render();
 })();
 </script>
