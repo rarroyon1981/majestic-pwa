@@ -124,9 +124,11 @@ let saveTimer = null;
 
 function loadFromStorage() {
   try {
-    const result = await localStorage.getItem(STORAGE_KEY);
-    if (result && result.value) state.roomData = JSON.parse(result.value);
-  } catch(_) {}
+    const data = localStorage.getItem(STORAGE_KEY);
+    if (data) state.roomData = JSON.parse(data);
+  } catch (e) {
+    console.error("Error cargando datos", e);
+  }
 }
 
 function scheduleSave() {
