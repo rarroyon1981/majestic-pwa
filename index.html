@@ -1,19 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;color:var(--color-text-primary);background:var(--color-background-tertiary)}
-select,input,textarea,button{font-family:inherit;font-size:13px;color:var(--color-text-primary)}
-select,input[type=text]{padding:6px 10px;border-radius:7px;border:0.5px solid var(--color-border-secondary);background:var(--color-background-primary);height:34px;outline:none}
-textarea{border:0.5px solid var(--color-border-secondary);border-radius:8px;padding:10px 12px;font-size:14px;resize:vertical;background:var(--color-background-secondary);line-height:1.5;outline:none;width:100%;min-height:90px}
-@keyframes spin{to{transform:rotate(360deg)}}
-.spin{animation:spin 0.8s linear infinite}
-</style>
+<!-- PWA iOS -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Majestic Obras">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<!-- PWA Android -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0a2342">
+<link rel="icon" href="icon-192.png">
+
+<title>Majestic Colonial — Control de Obras</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
-<div id="app" style="display:flex;flex-direction:column;height:100vh;min-height:600px"></div>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{
+    --navy:#0a2342;--gold:#c9a84c;
+    --color-text-primary:#1a1a1a;--color-text-secondary:#555;--color-text-tertiary:#888;
+    --color-background-primary:#fff;--color-background-secondary:#f5f5f5;--color-background-tertiary:#eee;
+    --color-border-secondary:#ddd;--color-border-tertiary:#eee;
+  }
+  @media(prefers-color-scheme:dark){
+    :root{
+      --color-text-primary:#f0f0f0;--color-text-secondary:#aaa;--color-text-tertiary:#666;
+      --color-background-primary:#1c1c1e;--color-background-secondary:#2c2c2e;--color-background-tertiary:#3a3a3c;
+      --color-border-secondary:#3a3a3c;--color-border-tertiary:#2c2c2e;
+    }
+  }
+  html,body{height:100%;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,sans-serif;
+    font-size:15px;background:var(--color-background-tertiary);color:var(--color-text-primary)}
+  #app{display:flex;flex-direction:column;height:100%;height:-webkit-fill-available}
+  select,input,textarea,button{font-family:inherit;font-size:13px;color:var(--color-text-primary)}
+  select,input[type=text]{padding:6px 10px;border-radius:7px;border:0.5px solid var(--color-border-secondary);
+    background:var(--color-background-primary);height:34px;outline:none}
+  textarea{border:0.5px solid var(--color-border-secondary);border-radius:8px;padding:10px 12px;
+    font-size:14px;resize:vertical;background:var(--color-background-secondary);line-height:1.5;outline:none;
+    width:100%;min-height:90px;color:var(--color-text-primary)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{animation:spin .8s linear infinite}
+
+  /* iPad landscape: show sidebar always */
+  @media(min-width:768px){
+    #room-list{width:260px!important;min-width:260px!important}
+  }
+  /* Phone: hide sidebar when room selected */
+  @media(max-width:767px){
+    #room-list.hidden{display:none!important}
+    #room-detail.hidden{display:none!important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--color-text-secondary)">
+    <div style="width:36px;height:36px;border:3px solid #eee;border-top:3px solid #c9a84c;border-radius:50%" class="spin"></div>
+    <div style="font-size:14px">Cargando…</div>
+  </div>
+</div>
 
 <script>
+// ─── DATA ────────────────────────────────────────────────────────────────────
 const STORAGE_KEY = "majestic-colonial-checklist-v1";
 
 const ITEMS = [
@@ -111,47 +164,43 @@ const BUILDINGS = {
 };
 
 const GROUPED_ITEMS = {};
-ITEMS.forEach(i => { (GROUPED_ITEMS[i.cat] || (GROUPED_ITEMS[i.cat] = [])).push(i); });
+ITEMS.forEach(i => { (GROUPED_ITEMS[i.cat]||(GROUPED_ITEMS[i.cat]=[])).push(i); });
 
+// ─── STATE ────────────────────────────────────────────────────────────────────
 let state = {
   selBuilding:"1", selFloor:"1", selRoom:null,
   roomData:{}, search:"",
   exportMenu:false, confirmReset:false,
-  saveStatus:"idle",
-  collapsedCats:{},
+  saveStatus:"idle", collapsedCats:{},
 };
 let saveTimer = null;
 
-function loadFromStorage() {
+// ─── LOCALSTORAGE ─────────────────────────────────────────────────────────────
+function loadData() {
   try {
-    const data = localStorage.getItem(STORAGE_KEY);
-    if (data) state.roomData = JSON.parse(data);
-  } catch (e) {
-    console.error("Error cargando datos", e);
-  }
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state.roomData = JSON.parse(raw);
+  } catch(_) {}
 }
 
 function scheduleSave() {
-  state.saveStatus = "saving";
-  renderHeader();
+  state.saveStatus = "saving"; renderHeader();
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async () => {
+  saveTimer = setTimeout(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.roomData));
-      state.saveStatus = "saved";
-      renderHeader();
+      state.saveStatus = "saved"; renderHeader();
       setTimeout(() => { state.saveStatus = "idle"; renderHeader(); }, 2500);
-    } catch(_) {
-      state.saveStatus = "error";
-      renderHeader();
-    }
+    } catch(_) { state.saveStatus = "error"; renderHeader(); }
   }, 600);
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 function fmtDate(iso) {
   if (!iso) return "";
   return new Date(iso).toLocaleString("es-ES",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
 }
+function fmtPct(v,t){ return t===0?"0%":Math.round((v/t)*100)+"%"; }
 
 function getRoomStats(roomId) {
   const rd = state.roomData[roomId];
@@ -159,304 +208,350 @@ function getRoomStats(roomId) {
   const vals = Object.values(rd.items||{});
   return {started:vals.filter(i=>i.started).length, finished:vals.filter(i=>i.finished).length, total:ITEMS.length};
 }
-
 function getTouchedCount() {
   return Object.keys(state.roomData).filter(r => {
-    const rd = state.roomData[r];
-    return rd && (Object.values(rd.items||{}).some(i=>i.started) || rd.notes);
+    const rd=state.roomData[r]; return rd&&(Object.values(rd.items||{}).some(i=>i.started)||rd.notes);
   }).length;
 }
-
-function getCurrentFloors() { return BUILDINGS[state.selBuilding]?.floors || {}; }
-function getCurrentRooms() {
-  const rooms = getCurrentFloors()[state.selFloor]?.rooms || [];
-  return state.search ? rooms.filter(r => r.includes(state.search)) : rooms;
+function getCurrentFloors(){ return BUILDINGS[state.selBuilding]?.floors||{}; }
+function getCurrentRooms(){
+  const rooms=getCurrentFloors()[state.selFloor]?.rooms||[];
+  return state.search?rooms.filter(r=>r.includes(state.search)):rooms;
+}
+function computeStats(roomIds){
+  let totalItems=0,startedItems=0,finishedItems=0,touchedRooms=0,completeRooms=0;
+  roomIds.forEach(rid=>{
+    const s=getRoomStats(rid);
+    totalItems+=s.total;startedItems+=s.started;finishedItems+=s.finished;
+    if(s.started>0)touchedRooms++;
+    if(s.finished===s.total)completeRooms++;
+  });
+  return {totalRooms:roomIds.length,touchedRooms,completeRooms,totalItems,startedItems,finishedItems};
 }
 
-function toggleItem(roomId, itemId, field) {
-  const ts = new Date().toISOString();
-  if (!state.roomData[roomId]) state.roomData[roomId] = {items:{}, notes:""};
-  const room = state.roomData[roomId];
-  if (!room.items[itemId]) room.items[itemId] = {started:false,startedAt:null,finished:false,finishedAt:null};
-  const item = room.items[itemId];
-  if (field === "started") {
-    if (item.started) { item.started=false; item.startedAt=null; item.finished=false; item.finishedAt=null; }
-    else              { item.started=true;  item.startedAt=ts; }
+// ─── MUTATIONS ────────────────────────────────────────────────────────────────
+function toggleItem(roomId,itemId,field){
+  const ts=new Date().toISOString();
+  if(!state.roomData[roomId]) state.roomData[roomId]={items:{},notes:""};
+  const room=state.roomData[roomId];
+  if(!room.items[itemId]) room.items[itemId]={started:false,startedAt:null,finished:false,finishedAt:null};
+  const item=room.items[itemId];
+  if(field==="started"){
+    if(item.started){item.started=false;item.startedAt=null;item.finished=false;item.finishedAt=null;}
+    else{item.started=true;item.startedAt=ts;}
   } else {
-    if (item.finished) { item.finished=false; item.finishedAt=null; }
-    else               { item.finished=true; item.finishedAt=ts; if(!item.started){item.started=true;item.startedAt=ts;} }
+    if(item.finished){item.finished=false;item.finishedAt=null;}
+    else{item.finished=true;item.finishedAt=ts;if(!item.started){item.started=true;item.startedAt=ts;}}
   }
-  scheduleSave();
-  renderRoomDetail();
-  renderRoomList();
-  renderHeader();
+  scheduleSave(); renderRoomDetail(); renderRoomList(); renderHeader();
 }
-
-function updateNotes(roomId, notes) {
-  if (!state.roomData[roomId]) state.roomData[roomId] = {items:{}, notes:""};
-  state.roomData[roomId].notes = notes;
+function updateNotes(roomId,notes){
+  if(!state.roomData[roomId]) state.roomData[roomId]={items:{},notes:""};
+  state.roomData[roomId].notes=notes;
   scheduleSave();
 }
-
-async function resetAll() {
-  state.roomData = {};
-  state.selRoom = null;
-  state.confirmReset = false;
-  try { localStorage.removeItem(STORAGE_KEY); } catch(_) {}
+function resetAll(){
+  if(!confirm("¿Borrar todos los datos? Esta acción no se puede deshacer.")) return;
+  state.roomData={}; state.selRoom=null;
+  try{localStorage.removeItem(STORAGE_KEY);}catch(_){}
   render();
 }
 
-// ── EXCEL EXPORT con SheetJS ───────────────────────────────────────────────
-function exportExcel(mode) {
-  if (typeof XLSX === "undefined") { alert("La librería Excel todavía está cargando, inténtalo en unos segundos."); return; }
+// ─── EXCEL EXPORT ─────────────────────────────────────────────────────────────
+function buildCellStyle(bold,bgRGB,fontRGB,center){
+  return {
+    font:{bold:!!bold,color:{rgb:fontRGB||"000000"}},
+    fill:bgRGB?{fgColor:{rgb:bgRGB}}:undefined,
+    alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true},
+    border:{top:{style:"thin",color:{rgb:"CCCCCC"}},bottom:{style:"thin",color:{rgb:"CCCCCC"}},left:{style:"thin",color:{rgb:"CCCCCC"}},right:{style:"thin",color:{rgb:"CCCCCC"}}}
+  };
+}
+function updRange(ws,r,c){
+  if(!ws["!ref"]){ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r,c}});return;}
+  const cur=XLSX.utils.decode_range(ws["!ref"]);
+  if(r>cur.e.r)cur.e.r=r; if(c>cur.e.c)cur.e.c=c;
+  ws["!ref"]=XLSX.utils.encode_range(cur);
+}
 
-  const rows = [];
-  Object.entries(BUILDINGS).forEach(([bid,building]) => {
-    Object.entries(building.floors).forEach(([fid,floor]) => {
-      floor.rooms.forEach(roomId => {
-        if (mode === "modified" && !state.roomData[roomId]) return;
-        const rd = state.roomData[roomId] || {items:{},notes:""};
-        ITEMS.forEach(item => {
-          const is = rd.items[item.id] || {};
-          rows.push({
-            "Edificio":          building.name,
-            "Planta":            floor.name,
-            "Habitación":        roomId,
-            "Nº Ítem":           item.id,
-            "Categoría":         item.cat,
-            "Descripción":       item.desc,
-            "Empezada":          is.started  ? "Sí" : "No",
-            "Fecha Inicio":      fmtDate(is.startedAt),
-            "Terminada":         is.finished ? "Sí" : "No",
-            "Fecha Fin":         fmtDate(is.finishedAt),
-            "Notas Habitación":  rd.notes || "",
-          });
+function exportExcel(mode){
+  if(typeof XLSX==="undefined"){alert("Librería Excel no disponible. Necesitas conexión a internet la primera vez.");return;}
+  const wb=XLSX.utils.book_new();
+  wb.Props={Title:"Control de Avance",Subject:"Majestic Colonial Punta Cana",Author:"Project Manager",CreatedDate:new Date()};
+  const exportDate=fmtDate(new Date().toISOString());
+  const NAVY="0A2342",GOLD="C9A84C",GREEN="1A7A3E",LTGREEN="D1FAE5",LGRAY="F5F5F5";
+  const allRooms=Object.values(BUILDINGS).flatMap(b=>Object.values(b.floors).flatMap(f=>f.rooms));
+
+  // ── HOJA 1: RESUMEN GENERAL ──
+  const wsG={};wsG["!merges"]=[];let rG=0;
+  wsG[XLSX.utils.encode_cell({r:rG,c:0})]={v:"MAJESTIC COLONIAL PUNTA CANA — CONTROL DE AVANCE DE OBRAS",t:"s",s:buildCellStyle(true,NAVY,"FFFFFF",true)};
+  wsG["!merges"].push({s:{r:rG,c:0},e:{r:rG,c:7}});rG++;
+  wsG[XLSX.utils.encode_cell({r:rG,c:0})]={v:`Fecha de exportación: ${exportDate}`,t:"s",s:buildCellStyle(false,GOLD,NAVY,true)};
+  wsG["!merges"].push({s:{r:rG,c:0},e:{r:rG,c:7}});rG++;rG++;
+
+  const gStats=computeStats(allRooms);
+  const hS=buildCellStyle(true,NAVY,"FFFFFF",true);
+  const nS=buildCellStyle(false,LGRAY,"000000",true);
+  const pS=buildCellStyle(true,LTGREEN,GREEN,true);
+
+  wsG[XLSX.utils.encode_cell({r:rG,c:0})]={v:"RESUMEN GENERAL DEL HOTEL",t:"s",s:buildCellStyle(true,GOLD,NAVY,false)};
+  wsG["!merges"].push({s:{r:rG,c:0},e:{r:rG,c:7}});rG++;
+  ["Total Habitaciones","Hab. Iniciadas","Hab. Completadas","% Completadas","Total Ítems","Ítems Iniciados","Ítems Terminados","% Ítems Terminados"].forEach((h,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v:h,t:"s",s:hS};});rG++;
+  [gStats.totalRooms,gStats.touchedRooms,gStats.completeRooms,fmtPct(gStats.completeRooms,gStats.totalRooms),gStats.totalItems,gStats.startedItems,gStats.finishedItems,fmtPct(gStats.finishedItems,gStats.totalItems)].forEach((v,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci===3||ci===7?pS:nS};});rG++;rG++;
+
+  wsG[XLSX.utils.encode_cell({r:rG,c:0})]={v:"RESUMEN POR EDIFICIO",t:"s",s:buildCellStyle(true,GOLD,NAVY,false)};
+  wsG["!merges"].push({s:{r:rG,c:0},e:{r:rG,c:7}});rG++;
+  ["Edificio","Total Hab.","Hab. Iniciadas","Hab. Completadas","% Completadas","Total Ítems","Ítems Terminados","% Ítems Terminados"].forEach((h,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v:h,t:"s",s:hS};});rG++;
+  const bBgs=["EEF2FF","FFF7ED","F0FDF4","FDF4FF"];
+  Object.entries(BUILDINGS).forEach(([bid,building],bi)=>{
+    const bR=Object.values(building.floors).flatMap(f=>f.rooms);
+    const bs=computeStats(bR);const bg=bBgs[bi];
+    const rs=buildCellStyle(false,bg,"000000",false),rc=buildCellStyle(false,bg,"000000",true),rp=buildCellStyle(true,bg,GREEN,true);
+    [building.name,bs.totalRooms,bs.touchedRooms,bs.completeRooms,fmtPct(bs.completeRooms,bs.totalRooms),bs.totalItems,bs.finishedItems,fmtPct(bs.finishedItems,bs.totalItems)].forEach((v,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci===0?rs:ci===4||ci===7?rp:rc};});rG++;
+  });rG++;
+
+  wsG[XLSX.utils.encode_cell({r:rG,c:0})]={v:"RESUMEN POR PLANTA",t:"s",s:buildCellStyle(true,GOLD,NAVY,false)};
+  wsG["!merges"].push({s:{r:rG,c:0},e:{r:rG,c:7}});rG++;
+  ["Edificio","Planta","Total Hab.","Hab. Iniciadas","Hab. Completadas","% Completadas","Ítems Terminados","% Ítems Terminados"].forEach((h,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v:h,t:"s",s:hS};});rG++;
+  const altBg=["EEF2FF","DBEAFE","F0FDF4","D1FAE5","FFF7ED","FFEDD5","FDF4FF","F3E8FF"];let ai=0;
+  Object.entries(BUILDINGS).forEach(([bid,building])=>{
+    Object.entries(building.floors).forEach(([fid,floor])=>{
+      const fs=computeStats(floor.rooms);const bg=altBg[ai++%altBg.length];
+      const rs=buildCellStyle(false,bg,"000000",false),rc=buildCellStyle(false,bg,"000000",true),rp=buildCellStyle(true,bg,GREEN,true);
+      [building.name,floor.name,fs.totalRooms,fs.touchedRooms,fs.completeRooms,fmtPct(fs.completeRooms,fs.totalRooms),fs.finishedItems,fmtPct(fs.finishedItems,fs.totalItems)].forEach((v,ci)=>{wsG[XLSX.utils.encode_cell({r:rG,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci<2?rs:ci===5||ci===7?rp:rc};});rG++;
+    });
+  });
+  updRange(wsG,rG,7);wsG["!cols"]=[{wch:26},{wch:14},{wch:14},{wch:16},{wch:16},{wch:14},{wch:16},{wch:18}];
+  XLSX.utils.book_append_sheet(wb,wsG,"📊 Resumen General");
+
+  // ── HOJA 2: HABITACIONES ──
+  const wsD={};wsD["!merges"]=[];let rD=0;
+  wsD[XLSX.utils.encode_cell({r:rD,c:0})]={v:"DETALLE DE AVANCE POR HABITACIÓN",t:"s",s:buildCellStyle(true,NAVY,"FFFFFF",true)};
+  wsD["!merges"].push({s:{r:rD,c:0},e:{r:rD,c:8}});rD++;
+  wsD[XLSX.utils.encode_cell({r:rD,c:0})]={v:`Exportado: ${exportDate}`,t:"s",s:buildCellStyle(false,GOLD,NAVY,true)};
+  wsD["!merges"].push({s:{r:rD,c:0},e:{r:rD,c:8}});rD++;rD++;
+  ["Edificio","Planta","Hab.","Ítems Iniciados","Ítems Terminados","% Iniciado","% Terminado","Completada","Notas"].forEach((h,ci)=>{wsD[XLSX.utils.encode_cell({r:rD,c:ci})]={v:h,t:"s",s:hS};});rD++;
+  let dAlt=false;
+  Object.entries(BUILDINGS).forEach(([bid,building])=>{
+    Object.entries(building.floors).forEach(([fid,floor])=>{
+      floor.rooms.forEach(roomId=>{
+        if(mode==="modified"&&!state.roomData[roomId])return;
+        const s=getRoomStats(roomId);
+        const rd2=state.roomData[roomId]||{items:{},notes:""};
+        const complete=s.finished===s.total&&s.total>0&&s.finished>0;
+        const bg=complete?"D1FAE5":s.started>0?"FEF3C7":dAlt?"F9FAFB":"FFFFFF";
+        const rs=buildCellStyle(false,bg,"000000",false),rc=buildCellStyle(false,bg,"000000",true);
+        const rp=buildCellStyle(complete,complete?"D1FAE5":bg,complete?GREEN:"000000",true);
+        [building.name,floor.name,roomId,s.started,s.finished,fmtPct(s.started,s.total),fmtPct(s.finished,s.total),complete?"✓ SÍ":"No",rd2.notes||""].forEach((v,ci)=>{wsD[XLSX.utils.encode_cell({r:rD,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci===5||ci===6||ci===7?rp:ci===8?rs:rc};});rD++;dAlt=!dAlt;
+      });
+    });
+  });
+  updRange(wsD,rD,8);wsD["!cols"]=[{wch:24},{wch:12},{wch:8},{wch:15},{wch:15},{wch:12},{wch:12},{wch:12},{wch:36}];
+  XLSX.utils.book_append_sheet(wb,wsD,"🏨 Habitaciones");
+
+  // ── HOJA 3: ÍTEMS DETALLE ──
+  const wsI={};wsI["!merges"]=[];let rI=0;
+  wsI[XLSX.utils.encode_cell({r:rI,c:0})]={v:"DETALLE COMPLETO DE ÍTEMS",t:"s",s:buildCellStyle(true,NAVY,"FFFFFF",true)};
+  wsI["!merges"].push({s:{r:rI,c:0},e:{r:rI,c:10}});rI++;
+  wsI[XLSX.utils.encode_cell({r:rI,c:0})]={v:`Exportado: ${exportDate}`,t:"s",s:buildCellStyle(false,GOLD,NAVY,true)};
+  wsI["!merges"].push({s:{r:rI,c:0},e:{r:rI,c:10}});rI++;rI++;
+  ["Edificio","Planta","Hab.","Nº","Categoría","Descripción","Empezada","Fecha Inicio","Terminada","Fecha Fin","Notas"].forEach((h,ci)=>{wsI[XLSX.utils.encode_cell({r:rI,c:ci})]={v:h,t:"s",s:hS};});rI++;
+  Object.entries(BUILDINGS).forEach(([bid,building])=>{
+    Object.entries(building.floors).forEach(([fid,floor])=>{
+      floor.rooms.forEach(roomId=>{
+        if(mode==="modified"&&!state.roomData[roomId])return;
+        const rd2=state.roomData[roomId]||{items:{},notes:""};
+        ITEMS.forEach(item=>{
+          const is=rd2.items[item.id]||{};
+          const started=!!is.started,finished=!!is.finished;
+          const bg=finished?"D1FAE5":started?"FEF3C7":"FFFFFF";
+          const rs=buildCellStyle(false,bg,"000000",false),rc=buildCellStyle(false,bg,"000000",true);
+          [building.name,floor.name,roomId,item.id,item.cat,item.desc,started?"Sí":"No",fmtDate(is.startedAt),finished?"Sí":"No",fmtDate(is.finishedAt),rd2.notes||""].forEach((v,ci)=>{wsI[XLSX.utils.encode_cell({r:rI,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci>=6?rc:ci>=4?rs:rc};});rI++;
         });
       });
     });
   });
+  updRange(wsI,rI,10);wsI["!cols"]=[{wch:24},{wch:12},{wch:8},{wch:6},{wch:28},{wch:42},{wch:10},{wch:18},{wch:10},{wch:18},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,wsI,"📋 Ítems Detalle");
 
-  if (!rows.length) { alert("No hay datos para exportar."); return; }
+  // ── HOJA 4: POR CATEGORÍA ──
+  const wsC={};wsC["!merges"]=[];let rC=0;
+  wsC[XLSX.utils.encode_cell({r:rC,c:0})]={v:"AVANCE POR CATEGORÍA",t:"s",s:buildCellStyle(true,NAVY,"FFFFFF",true)};
+  wsC["!merges"].push({s:{r:rC,c:0},e:{r:rC,c:5}});rC++;
+  wsC[XLSX.utils.encode_cell({r:rC,c:0})]={v:`Exportado: ${exportDate}`,t:"s",s:buildCellStyle(false,GOLD,NAVY,true)};
+  wsC["!merges"].push({s:{r:rC,c:0},e:{r:rC,c:5}});rC++;rC++;
+  ["Categoría","Ítems Totales","Ítems Iniciados","% Iniciado","Ítems Terminados","% Terminado"].forEach((h,ci)=>{wsC[XLSX.utils.encode_cell({r:rC,c:ci})]={v:h,t:"s",s:hS};});rC++;
+  const catBgs=["FEE2E2","FEF9C3","DBEAFE","FFEDD5","F3E8FF","FEF3C7","CCFBF1","DCFCE7","E0E7FF"];
+  Object.entries(GROUPED_ITEMS).forEach(([cat,items],ci2)=>{
+    let cs=0,cf=0,ct=0;
+    allRooms.forEach(rid=>{
+      const rd2=state.roomData[rid]||{items:{}};
+      items.forEach(item=>{ct++;const is=rd2.items[item.id]||{};if(is.started)cs++;if(is.finished)cf++;});
+    });
+    const bg=catBgs[ci2%catBgs.length];
+    const rs=buildCellStyle(false,bg,"000000",false),rc=buildCellStyle(false,bg,"000000",true),rp=buildCellStyle(true,bg,GREEN,true);
+    [cat,ct,cs,fmtPct(cs,ct),cf,fmtPct(cf,ct)].forEach((v,ci)=>{wsC[XLSX.utils.encode_cell({r:rC,c:ci})]={v,t:typeof v==="number"?"n":"s",s:ci===0?rs:ci===3||ci===5?rp:rc};});rC++;
+  });
+  updRange(wsC,rC,5);wsC["!cols"]=[{wch:30},{wch:14},{wch:16},{wch:14},{wch:16},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,wsC,"📂 Por Categoría");
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-
-  // Column widths
-  ws["!cols"] = [
-    {wch:24}, {wch:12}, {wch:12}, {wch:8},
-    {wch:30}, {wch:42}, {wch:10}, {wch:18},
-    {wch:10}, {wch:18}, {wch:32},
-  ];
-
-  // Bold header row
-  const range = XLSX.utils.decode_range(ws["!ref"]);
-  for (let C = range.s.c; C <= range.e.c; C++) {
-    const cellAddr = XLSX.utils.encode_cell({r:0, c:C});
-    if (!ws[cellAddr]) continue;
-    ws[cellAddr].s = {font:{bold:true}, fill:{fgColor:{rgb:"0A2342"}}, font:{bold:true,color:{rgb:"FFFFFF"}}};
-  }
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Avance Reforma");
-
-  // Metadata
-  wb.Props = {
-    Title: "Control de Avance de Obras",
-    Subject: "Majestic Colonial Punta Cana",
-    Author: "Project Manager",
-    CreatedDate: new Date(),
-  };
-
-  const filename = `avance_majestic_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, filename);
-
-  state.exportMenu = false;
-  renderHeader();
+  XLSX.writeFile(wb,`avance_majestic_${new Date().toISOString().slice(0,10)}.xlsx`);
+  state.exportMenu=false;renderHeader();
 }
 
-const mbs = {display:"block",width:"100%",textAlign:"left",padding:"11px 14px",border:"none",
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+const mbs={display:"block",width:"100%",textAlign:"left",padding:"11px 14px",border:"none",
   borderBottom:"0.5px solid var(--color-border-tertiary)",background:"none",fontSize:"13px",
   cursor:"pointer",color:"var(--color-text-primary)"};
 
-function renderHeader() {
-  const tc = getTouchedCount();
-  const statusColors = {idle:"transparent",saving:"#9ca3af",saved:"#16a34a",error:"#dc2626"};
-  const statusLabels = {idle:"",saving:"Guardando…",saved:"✓ Guardado en este dispositivo",error:"⚠ Error al guardar"};
+function renderHeader(){
+  const tc=getTouchedCount();
+  const sC={idle:"transparent",saving:"#9ca3af",saved:"#16a34a",error:"#dc2626"};
+  const sL={idle:"",saving:"Guardando…",saved:"✓ Guardado",error:"⚠ Error"};
+  const el=document.createElement("header");el.id="app-header";
+  Object.assign(el.style,{background:"var(--navy,#0a2342)",color:"#fff",padding:"env(safe-area-inset-top,0px) 14px 0",paddingTop:"calc(env(safe-area-inset-top,0px) + 12px)",height:"calc(env(safe-area-inset-top,0px) + 56px)",display:"flex",alignItems:"flex-end",paddingBottom:"10px",gap:"10px",flexShrink:"0",zIndex:"10",position:"relative",boxSizing:"border-box"});
 
-  const el = document.createElement("header");
-  el.id = "app-header";
-  Object.assign(el.style, {background:"#0a2342",color:"#fff",padding:"0 14px",height:"56px",display:"flex",alignItems:"center",gap:"10px",flexShrink:"0",zIndex:"10",position:"relative"});
+  const td=document.createElement("div");td.style.cssText="flex:1;min-width:0";
+  td.innerHTML=`<div style="font-size:12px;font-weight:700;letter-spacing:.5px;color:#c9a84c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">MAJESTIC COLONIAL · PUNTA CANA</div><div style="font-size:11px;color:rgba(255,255,255,.5);margin-top:2px;display:flex;align-items:center;gap:8px"><span>${tc} hab. registradas</span>${state.saveStatus!=="idle"?`<span style="color:${sC[state.saveStatus]};font-weight:600">${sL[state.saveStatus]}</span>`:""}</div>`;
+  el.appendChild(td);
 
-  // Title
-  const titleDiv = document.createElement("div");
-  titleDiv.style.cssText="flex:1;min-width:0";
-  titleDiv.innerHTML=`<div style="font-size:12px;font-weight:700;letter-spacing:0.5px;color:#c9a84c;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">MAJESTIC COLONIAL · PUNTA CANA</div><div style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:1px;display:flex;align-items:center;gap:8px"><span>${tc} hab. registradas</span>${state.saveStatus!=="idle"?`<span style="color:${statusColors[state.saveStatus]};font-weight:600">${statusLabels[state.saveStatus]}</span>`:""}</div>`;
-  el.appendChild(titleDiv);
+  const rb=document.createElement("button");rb.textContent="🗑 Borrar";
+  rb.style.cssText="background:transparent;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.6);font-size:11px;padding:5px 8px;border-radius:7px;cursor:pointer;flex-shrink:0";
+  rb.onclick=resetAll;el.appendChild(rb);
 
-  // Reset
-  if (state.confirmReset) {
-    const resetBox = document.createElement("div");
-    resetBox.style.cssText="display:flex;align-items:center;gap:6px;flex-shrink:0";
-    const lbl=document.createElement("span"); lbl.style.cssText="font-size:11px;color:#f87171;white-space:nowrap"; lbl.textContent="¿Borrar todo?";
-    const yes=document.createElement("button"); yes.textContent="Sí"; yes.style.cssText="background:#dc2626;border:none;color:#fff;font-size:11px;padding:5px 8px;border-radius:7px;cursor:pointer;font-weight:700"; yes.onclick=resetAll;
-    const no=document.createElement("button"); no.textContent="No"; no.style.cssText="background:transparent;border:1px solid rgba(255,255,255,0.3);color:#fff;font-size:11px;padding:5px 8px;border-radius:7px;cursor:pointer"; no.onclick=()=>{state.confirmReset=false;renderHeader();};
-    resetBox.appendChild(lbl); resetBox.appendChild(yes); resetBox.appendChild(no);
-    el.appendChild(resetBox);
-  } else {
-    const resetBtn=document.createElement("button");
-    resetBtn.textContent="Borrar datos"; resetBtn.style.cssText="background:transparent;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.55);font-size:11px;padding:5px 8px;border-radius:7px;cursor:pointer;flex-shrink:0";
-    resetBtn.onclick=()=>{state.confirmReset=true;renderHeader();};
-    el.appendChild(resetBtn);
-  }
-
-  // Export
-  const exportWrap = document.createElement("div");
-  exportWrap.style.cssText="position:relative;flex-shrink:0";
-  const exportBtn=document.createElement("button");
-  exportBtn.style.cssText="background:#c9a84c;border:none;color:#0a2342;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap";
-  exportBtn.textContent="↓ Exportar Excel";
-  exportBtn.onclick=()=>{state.exportMenu=!state.exportMenu;renderHeader();};
-  exportWrap.appendChild(exportBtn);
-
-  if (state.exportMenu) {
+  const ew=document.createElement("div");ew.style.cssText="position:relative;flex-shrink:0";
+  const eb=document.createElement("button");
+  eb.style.cssText="background:#c9a84c;border:none;color:#0a2342;font-weight:700;font-size:12px;padding:7px 12px;border-radius:8px;cursor:pointer;white-space:nowrap";
+  eb.textContent="↓ Excel";eb.onclick=()=>{state.exportMenu=!state.exportMenu;renderHeader();};
+  ew.appendChild(eb);
+  if(state.exportMenu){
     const menu=document.createElement("div");
-    menu.style.cssText="position:absolute;right:0;top:40px;background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:8px;width:230px;box-shadow:0 4px 16px rgba(0,0,0,0.15);z-index:200;overflow:hidden";
-    const b1=document.createElement("button"); b1.style=Object.assign(b1.style,mbs); b1.textContent="Exportar TODAS las habitaciones"; b1.onclick=()=>exportExcel("all"); Object.assign(b1.style,mbs);
-    const b2=document.createElement("button"); b2.textContent=`Solo modificadas (${tc})`; Object.assign(b2.style,mbs); b2.onclick=()=>exportExcel("modified");
-    const b3=document.createElement("button"); b3.textContent="Cancelar"; Object.assign(b3.style,{...mbs,color:"var(--color-text-tertiary)"}); b3.onclick=()=>{state.exportMenu=false;renderHeader();};
-    menu.appendChild(b1); menu.appendChild(b2); menu.appendChild(b3);
-    exportWrap.appendChild(menu);
+    menu.style.cssText="position:absolute;right:0;top:40px;background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:8px;width:240px;box-shadow:0 4px 20px rgba(0,0,0,.2);z-index:200;overflow:hidden";
+    const b1=document.createElement("button");Object.assign(b1.style,mbs);b1.innerHTML="📊 Exportar TODAS (4 hojas)";b1.onclick=()=>exportExcel("all");
+    const b2=document.createElement("button");Object.assign(b2.style,mbs);b2.innerHTML=`📋 Solo modificadas (${tc} hab.)`;b2.onclick=()=>exportExcel("modified");
+    const b3=document.createElement("button");Object.assign(b3.style,{...mbs,color:"var(--color-text-tertiary)"});b3.textContent="Cancelar";b3.onclick=()=>{state.exportMenu=false;renderHeader();};
+    menu.appendChild(b1);menu.appendChild(b2);menu.appendChild(b3);ew.appendChild(menu);
   }
-  el.appendChild(exportWrap);
-
-  const existing=document.getElementById("app-header");
-  if (existing) existing.replaceWith(el);
-  else document.getElementById("app").prepend(el);
+  el.appendChild(ew);
+  const ex=document.getElementById("app-header");
+  if(ex)ex.replaceWith(el);else document.getElementById("app").prepend(el);
 }
 
-function renderNav() {
-  const floors = getCurrentFloors();
-  const el = document.createElement("nav");
-  el.id = "app-nav";
+function renderNav(){
+  const floors=getCurrentFloors();
+  const el=document.createElement("nav");el.id="app-nav";
   Object.assign(el.style,{background:"var(--color-background-secondary)",borderBottom:"0.5px solid var(--color-border-tertiary)",padding:"0 12px",height:"48px",display:"flex",alignItems:"center",gap:"8px",flexShrink:"0",overflowX:"auto"});
-
-  const bSel=document.createElement("select");
-  Object.entries(BUILDINGS).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.name;if(k===state.selBuilding)o.selected=true;bSel.appendChild(o);});
-  bSel.onchange=e=>{state.selBuilding=e.target.value;state.selFloor="1";state.selRoom=null;render();};
-  el.appendChild(bSel);
-
+  const bS=document.createElement("select");
+  Object.entries(BUILDINGS).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.name;if(k===state.selBuilding)o.selected=true;bS.appendChild(o);});
+  bS.onchange=e=>{state.selBuilding=e.target.value;state.selFloor="1";state.selRoom=null;render();};
+  el.appendChild(bS);
   const a1=document.createElement("span");a1.textContent="›";a1.style.color="var(--color-text-tertiary)";el.appendChild(a1);
-
-  const fSel=document.createElement("select");
-  Object.entries(floors).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=`${v.name} (${v.rooms.length})`;if(k===state.selFloor)o.selected=true;fSel.appendChild(o);});
-  fSel.onchange=e=>{state.selFloor=e.target.value;state.selRoom=null;renderNav();renderRoomList();renderRoomDetail();};
-  el.appendChild(fSel);
-
+  const fS=document.createElement("select");
+  Object.entries(floors).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=`${v.name} (${v.rooms.length})`;if(k===state.selFloor)o.selected=true;fS.appendChild(o);});
+  fS.onchange=e=>{state.selFloor=e.target.value;state.selRoom=null;renderNav();renderRoomList();renderRoomDetail();};
+  el.appendChild(fS);
   const a2=document.createElement("span");a2.textContent="›";a2.style.color="var(--color-text-tertiary)";el.appendChild(a2);
-
-  const si=document.createElement("input");si.type="text";si.placeholder="Buscar hab…";si.value=state.search;si.style.width="110px";
-  si.oninput=e=>{state.search=e.target.value;renderRoomList();};
-  el.appendChild(si);
-
-  if (state.selRoom) {
+  const si=document.createElement("input");si.type="text";si.placeholder="Buscar hab…";si.value=state.search;si.style.width="100px";
+  si.oninput=e=>{state.search=e.target.value;renderRoomList();};el.appendChild(si);
+  if(state.selRoom){
     const sp=document.createElement("div");sp.style.flex="1";el.appendChild(sp);
-    const badge=document.createElement("div");badge.style.cssText="display:flex;align-items:center;gap:6px";
+    const badge=document.createElement("div");badge.style.cssText="display:flex;align-items:center;gap:6px;flex-shrink:0";
     const lbl=document.createElement("span");lbl.textContent=`HAB. ${state.selRoom}`;lbl.style.cssText="font-size:13px;font-weight:700;color:#0a2342";
-    const back=document.createElement("button");back.textContent="← Volver";back.style.cssText="font-size:11px;background:none;border:0.5px solid var(--color-border-secondary);border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--color-text-secondary)";
-    back.onclick=()=>{state.selRoom=null;renderNav();renderRoomList();renderRoomDetail();};
+    const back=document.createElement("button");back.textContent="← Volver";
+    back.style.cssText="font-size:11px;background:none;border:0.5px solid var(--color-border-secondary);border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--color-text-secondary)";
+    back.onclick=()=>{state.selRoom=null;renderNav();updateMobilePanels();renderRoomList();renderRoomDetail();};
     badge.appendChild(lbl);badge.appendChild(back);el.appendChild(badge);
   }
-
-  const existing=document.getElementById("app-nav");
-  if (existing) existing.replaceWith(el);
+  const ex=document.getElementById("app-nav");if(ex)ex.replaceWith(el);
 }
 
-function renderRoomList() {
+function updateMobilePanels(){
   const list=document.getElementById("room-list");
-  if (!list) return;
-  const rooms=getCurrentRooms();
-  list.innerHTML="";
+  const detail=document.getElementById("room-detail");
+  if(!list||!detail)return;
+  const isMobile=window.innerWidth<768;
+  if(isMobile){
+    if(state.selRoom){list.classList.add("hidden");detail.classList.remove("hidden");}
+    else{list.classList.remove("hidden");detail.classList.add("hidden");}
+  } else {
+    list.classList.remove("hidden");detail.classList.remove("hidden");
+  }
+}
 
-  const cntEl=document.createElement("div");
-  cntEl.style.cssText="padding:10px 10px 6px;font-size:11px;font-weight:600;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.5px";
-  cntEl.textContent=`${rooms.length} habitaciones`;
-  list.appendChild(cntEl);
-
-  const scroll=document.createElement("div");scroll.style.cssText="flex:1;overflow-y:auto";
+function renderRoomList(){
+  const list=document.getElementById("room-list");if(!list)return;
+  const rooms=getCurrentRooms();list.innerHTML="";
+  const cnt=document.createElement("div");
+  cnt.style.cssText="padding:10px 10px 6px;font-size:11px;font-weight:600;color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:.5px";
+  cnt.textContent=`${rooms.length} habitaciones`;list.appendChild(cnt);
+  const scroll=document.createElement("div");scroll.style.cssText="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch";
   rooms.forEach(roomId=>{
-    const stats=getRoomStats(roomId);
-    const pct=Math.round((stats.finished/stats.total)*100);
+    const s=getRoomStats(roomId);
+    const pct=Math.round((s.finished/s.total)*100);
     const active=state.selRoom===roomId;
     const btn=document.createElement("button");
-    btn.style.cssText=`width:100%;display:flex;align-items:center;padding:10px 12px;gap:10px;background:${active?"#0a2342":"transparent"};border:none;border-bottom:0.5px solid var(--color-border-tertiary);cursor:pointer;text-align:left;-webkit-tap-highlight-color:transparent`;
-    btn.onclick=()=>{state.selRoom=roomId;renderNav();renderRoomList();renderRoomDetail();};
+    btn.style.cssText=`width:100%;display:flex;align-items:center;padding:12px 14px;gap:10px;background:${active?"#0a2342":"transparent"};border:none;border-bottom:0.5px solid var(--color-border-tertiary);cursor:pointer;text-align:left`;
+    btn.onclick=()=>{state.selRoom=roomId;renderNav();renderRoomList();renderRoomDetail();updateMobilePanels();};
     const info=document.createElement("div");info.style.flex="1";
     const name=document.createElement("div");name.style.cssText=`font-size:14px;font-weight:600;color:${active?"#c9a84c":"var(--color-text-primary)"}`;name.textContent=`Hab. ${roomId}`;
-    const bar=document.createElement("div");bar.style.cssText=`height:3px;border-radius:2px;background:${active?"rgba(255,255,255,0.1)":"var(--color-background-secondary)"};margin-top:5px;overflow:hidden`;
-    if(stats.finished>0){const fill=document.createElement("div");fill.style.cssText=`height:100%;width:${pct}%;background:${active?"#c9a84c":"#16a34a"};border-radius:2px`;bar.appendChild(fill);}
+    const bar=document.createElement("div");bar.style.cssText=`height:3px;border-radius:2px;background:${active?"rgba(255,255,255,.1)":"var(--color-background-secondary)"};margin-top:5px;overflow:hidden`;
+    if(s.finished>0){const fill=document.createElement("div");fill.style.cssText=`height:100%;width:${pct}%;background:${active?"#c9a84c":"#16a34a"};border-radius:2px`;bar.appendChild(fill);}
     info.appendChild(name);info.appendChild(bar);btn.appendChild(info);
-    if(stats.finished>0){const p=document.createElement("span");p.style.cssText=`font-size:11px;font-weight:700;color:${active?"#c9a84c":"#16a34a"}`;p.textContent=`${pct}%`;btn.appendChild(p);}
-    else if(stats.started>0){const dot=document.createElement("span");dot.style.cssText="width:8px;height:8px;border-radius:4px;background:#f59e0b;flex-shrink:0;display:block";btn.appendChild(dot);}
+    if(s.finished>0){const p=document.createElement("span");p.style.cssText=`font-size:11px;font-weight:700;color:${active?"#c9a84c":"#16a34a"}`;p.textContent=`${pct}%`;btn.appendChild(p);}
+    else if(s.started>0){const dot=document.createElement("span");dot.style.cssText="width:8px;height:8px;border-radius:4px;background:#f59e0b;flex-shrink:0;display:block";btn.appendChild(dot);}
     scroll.appendChild(btn);
   });
   list.appendChild(scroll);
 }
 
-function renderRoomDetail() {
-  const detail=document.getElementById("room-detail");
-  if (!detail) return;
+function renderRoomDetail(){
+  const detail=document.getElementById("room-detail");if(!detail)return;
   detail.innerHTML="";
-
-  if (!state.selRoom) {
+  if(!state.selRoom){
     detail.style.padding="0";
     const tc=getTouchedCount();
     const empty=document.createElement("div");
-    empty.style.cssText="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--color-text-tertiary);gap:8px;padding:40px";
-    empty.innerHTML=`<div style="font-size:40px">🏨</div><div style="font-size:16px;font-weight:500;color:var(--color-text-primary)">Selecciona una habitación</div><div style="font-size:13px">Elige edificio, planta y habitación en el panel izquierdo</div>`;
-    if(tc>0){const sv=document.createElement("div");sv.style.cssText="margin-top:12px;padding:10px 18px;background:#f0fdf4;border-radius:10px;border:1px solid #bbf7d0;font-size:13px;color:#15803d;font-weight:500;text-align:center";sv.textContent=`✓ ${tc} habitaciones con datos guardados en este dispositivo`;empty.appendChild(sv);}
-    detail.appendChild(empty);
-    return;
+    empty.style.cssText="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--color-text-tertiary);gap:8px;padding:40px 20px;text-align:center";
+    empty.innerHTML=`<div style="font-size:48px">🏨</div><div style="font-size:18px;font-weight:600;color:var(--color-text-primary)">Majestic Colonial</div><div style="font-size:14px">Control de Avance de Obras</div><div style="font-size:13px;margin-top:4px">Selecciona edificio, planta y habitación</div>`;
+    if(tc>0){const sv=document.createElement("div");sv.style.cssText="margin-top:16px;padding:12px 20px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;font-size:13px;color:#15803d;font-weight:500";sv.textContent=`✓ ${tc} habitaciones con datos guardados`;empty.appendChild(sv);}
+    detail.appendChild(empty);return;
   }
-
-  detail.style.padding="16px 18px";
+  detail.style.padding="16px 16px";
   const roomId=state.selRoom;
-  const stats=getRoomStats(roomId);
-  const rd=state.roomData[roomId]||{items:{},notes:""};
-  const pf=Math.round((stats.finished/stats.total)*100);
-  const ps=Math.round((stats.started/stats.total)*100);
+  const s=getRoomStats(roomId);
+  const rd2=state.roomData[roomId]||{items:{},notes:""};
+  const pf=Math.round((s.finished/s.total)*100);
+  const ps=Math.round((s.started/s.total)*100);
   const floors=getCurrentFloors();
-
-  // Header card
   const card=document.createElement("div");
   card.style.cssText="background:var(--color-background-primary);border-radius:12px;padding:14px 16px;margin-bottom:12px;border:0.5px solid var(--color-border-tertiary)";
-  card.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><div style="background:#0a2342;color:#c9a84c;border-radius:10px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;flex-shrink:0">${roomId}</div><div style="flex:1"><div style="font-weight:700;font-size:16px;color:var(--color-text-primary)">Habitación ${roomId}</div><div style="font-size:12px;color:var(--color-text-secondary)">${BUILDINGS[state.selBuilding]?.name} · ${floors[state.selFloor]?.name}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:800;color:#16a34a">${stats.finished}</div><div style="font-size:11px;color:var(--color-text-tertiary)">terminados</div></div></div><div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-secondary)"><span>Iniciadas: <strong style="color:#d97706">${stats.started}</strong></span><span>Terminadas: <strong style="color:#16a34a">${stats.finished}</strong></span><span style="color:var(--color-text-tertiary)">${stats.total} ítems</span></div><div style="height:6px;border-radius:3px;background:var(--color-background-secondary);overflow:hidden;position:relative"><div style="position:absolute;left:0;top:0;height:100%;width:${ps}%;background:#fbbf24;border-radius:3px;transition:width 0.3s"></div><div style="position:absolute;left:0;top:0;height:100%;width:${pf}%;background:#16a34a;border-radius:3px;transition:width 0.3s"></div></div>`;
+  card.innerHTML=`<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><div style="background:#0a2342;color:#c9a84c;border-radius:10px;width:48px;height:48px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;flex-shrink:0">${roomId}</div><div style="flex:1"><div style="font-weight:700;font-size:16px;color:var(--color-text-primary)">Habitación ${roomId}</div><div style="font-size:12px;color:var(--color-text-secondary)">${BUILDINGS[state.selBuilding]?.name} · ${floors[state.selFloor]?.name}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:800;color:#16a34a">${s.finished}</div><div style="font-size:11px;color:var(--color-text-tertiary)">terminados</div></div></div><div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:12px;color:var(--color-text-secondary)"><span>Iniciadas: <strong style="color:#d97706">${s.started}</strong></span><span>Terminadas: <strong style="color:#16a34a">${s.finished}</strong></span><span style="color:var(--color-text-tertiary)">${s.total} ítems</span></div><div style="height:6px;border-radius:3px;background:var(--color-background-secondary);overflow:hidden;position:relative"><div style="position:absolute;left:0;top:0;height:100%;width:${ps}%;background:#fbbf24;border-radius:3px;transition:width .3s"></div><div style="position:absolute;left:0;top:0;height:100%;width:${pf}%;background:#16a34a;border-radius:3px;transition:width .3s"></div></div>`;
   detail.appendChild(card);
 
-  // Categories
   Object.entries(GROUPED_ITEMS).forEach(([cat,items])=>{
     const colors=CAT_COLORS[cat]||{bg:"#f1f5f9",text:"#334155",badge:"#64748b"};
-    const doneCount=items.filter(i=>(rd.items[i.id]||{}).finished).length;
+    const doneCount=items.filter(i=>(rd2.items[i.id]||{}).finished).length;
     const isCollapsed=!!state.collapsedCats[`${roomId}_${cat}`];
     const section=document.createElement("div");
     section.style.cssText="margin-bottom:8px;border-radius:10px;overflow:hidden;border:0.5px solid var(--color-border-tertiary)";
     const catBtn=document.createElement("button");
-    catBtn.style.cssText=`width:100%;display:flex;align-items:center;gap:8px;padding:12px 14px;background:${colors.bg};border:none;cursor:pointer;-webkit-tap-highlight-color:transparent`;
-    catBtn.innerHTML=`<span style="flex:1;font-size:13px;font-weight:600;color:${colors.text};text-align:left">${cat}</span><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${colors.badge};color:#fff">${doneCount}/${items.length}</span><span style="font-size:14px;color:${colors.text};display:inline-block;transform:rotate(${isCollapsed?"-90":"0"}deg);transition:transform 0.2s">▾</span>`;
+    catBtn.style.cssText=`width:100%;display:flex;align-items:center;gap:8px;padding:13px 14px;background:${colors.bg};border:none;cursor:pointer`;
+    catBtn.innerHTML=`<span style="flex:1;font-size:13px;font-weight:600;color:${colors.text};text-align:left">${cat}</span><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${colors.badge};color:#fff">${doneCount}/${items.length}</span><span style="font-size:14px;color:${colors.text};display:inline-block;transform:rotate(${isCollapsed?"-90":"0"}deg);transition:transform .2s">▾</span>`;
     catBtn.onclick=()=>{state.collapsedCats[`${roomId}_${cat}`]=!isCollapsed;renderRoomDetail();};
     section.appendChild(catBtn);
-    if (!isCollapsed) {
+    if(!isCollapsed){
       items.forEach(item=>{
-        const is=rd.items[item.id]||{};
+        const is=rd2.items[item.id]||{};
         const started=!!is.started,finished=!!is.finished;
         const rowBg=finished?"#f0fdf4":started?"#fffbeb":"var(--color-background-primary)";
         const row=document.createElement("div");
-        row.style.cssText=`display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:0.5px solid var(--color-border-tertiary);background:${rowBg};min-height:52px`;
-        const num=document.createElement("span");num.style.cssText="width:26px;height:26px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;background:var(--color-background-secondary);color:var(--color-text-tertiary)";num.textContent=item.id;
+        row.style.cssText=`display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:0.5px solid var(--color-border-tertiary);background:${rowBg};min-height:54px`;
+        const num=document.createElement("span");num.style.cssText="width:24px;height:24px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;background:var(--color-background-secondary);color:var(--color-text-tertiary)";num.textContent=item.id;
         const desc=document.createElement("span");desc.style.cssText=`flex:1;font-size:14px;line-height:1.35;color:${finished?"#15803d":"var(--color-text-primary)"}`;desc.textContent=item.desc;
         const btnS=document.createElement("button");
-        btnS.style.cssText=`flex-shrink:0;width:86px;height:40px;border-radius:8px;border:1.5px solid ${started?"#d97706":"var(--color-border-secondary)"};background:${started?"#d97706":"transparent"};color:${started?"#fff":"var(--color-text-tertiary)"};font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent`;
+        btnS.style.cssText=`flex-shrink:0;width:84px;height:42px;border-radius:8px;border:1.5px solid ${started?"#d97706":"var(--color-border-secondary)"};background:${started?"#d97706":"transparent"};color:${started?"#fff":"var(--color-text-tertiary)"};font-size:12px;font-weight:600;cursor:pointer`;
         btnS.textContent=started?"✓ Iniciada":"Iniciada";btnS.onclick=()=>toggleItem(roomId,item.id,"started");
         const btnF=document.createElement("button");
-        btnF.style.cssText=`flex-shrink:0;width:92px;height:40px;border-radius:8px;border:1.5px solid ${finished?"#16a34a":"var(--color-border-secondary)"};background:${finished?"#16a34a":"transparent"};color:${finished?"#fff":"var(--color-text-tertiary)"};font-size:12px;font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent`;
+        btnF.style.cssText=`flex-shrink:0;width:90px;height:42px;border-radius:8px;border:1.5px solid ${finished?"#16a34a":"var(--color-border-secondary)"};background:${finished?"#16a34a":"transparent"};color:${finished?"#fff":"var(--color-text-tertiary)"};font-size:12px;font-weight:600;cursor:pointer`;
         btnF.textContent=finished?"✓ Terminada":"Terminada";btnF.onclick=()=>toggleItem(roomId,item.id,"finished");
         row.appendChild(num);row.appendChild(desc);row.appendChild(btnS);row.appendChild(btnF);
         section.appendChild(row);
@@ -465,34 +560,41 @@ function renderRoomDetail() {
     detail.appendChild(section);
   });
 
-  // Notes
   const noteCard=document.createElement("div");
   noteCard.style.cssText="background:var(--color-background-primary);border-radius:12px;padding:14px 16px;margin-top:12px;border:0.5px solid var(--color-border-tertiary)";
-  const noteLbl=document.createElement("div");noteLbl.style.cssText="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--color-text-secondary)";noteLbl.textContent="Notas y observaciones";
-  const ta=document.createElement("textarea");ta.value=rd.notes||"";ta.placeholder="Incidencias, pendientes o cualquier observación sobre esta habitación…";ta.rows=4;
-  const charCnt=document.createElement("div");charCnt.style.cssText="font-size:11px;color:var(--color-text-tertiary);margin-top:4px";charCnt.textContent=`${(rd.notes||"").length} caracteres`;
+  const noteLbl=document.createElement("div");noteLbl.style.cssText="font-size:13px;font-weight:600;margin-bottom:8px;color:var(--color-text-secondary)";noteLbl.textContent="📝 Notas y observaciones";
+  const ta=document.createElement("textarea");ta.value=rd2.notes||"";ta.placeholder="Incidencias, pendientes, materiales faltantes…";ta.rows=4;
+  const charCnt=document.createElement("div");charCnt.style.cssText="font-size:11px;color:var(--color-text-tertiary);margin-top:4px";charCnt.textContent=`${(rd2.notes||"").length} caracteres`;
   ta.oninput=e=>{updateNotes(roomId,e.target.value);charCnt.textContent=`${e.target.value.length} caracteres`;};
   noteCard.appendChild(noteLbl);noteCard.appendChild(ta);noteCard.appendChild(charCnt);
   detail.appendChild(noteCard);
-  const sp=document.createElement("div");sp.style.height="32px";detail.appendChild(sp);
+  const sp=document.createElement("div");sp.style.height="calc(env(safe-area-inset-bottom,0px) + 32px)";detail.appendChild(sp);
 }
 
-function render() {
-  const app=document.getElementById("app");
-  app.innerHTML="";
-  const hSlot=document.createElement("div");hSlot.id="app-header";app.appendChild(hSlot);
-  const nSlot=document.createElement("nav");nSlot.id="app-nav";app.appendChild(nSlot);
-  const content=document.createElement("div");content.id="app-content";content.style.cssText="flex:1;display:flex;overflow:hidden";
-  const aside=document.createElement("aside");aside.id="room-list";aside.style.cssText="width:260px;min-width:260px;border-right:0.5px solid var(--color-border-tertiary);display:flex;flex-direction:column;background:var(--color-background-primary);overflow:hidden";
-  const main=document.createElement("main");main.id="room-detail";main.style.cssText="flex:1;overflow-y:auto";
+function render(){
+  const app=document.getElementById("app");app.innerHTML="";
+  const hS=document.createElement("div");hS.id="app-header";app.appendChild(hS);
+  const nS=document.createElement("nav");nS.id="app-nav";app.appendChild(nS);
+  const content=document.createElement("div");content.id="app-content";
+  content.style.cssText="flex:1;display:flex;overflow:hidden";
+  const aside=document.createElement("aside");aside.id="room-list";
+  aside.style.cssText="width:260px;min-width:260px;border-right:0.5px solid var(--color-border-tertiary);display:flex;flex-direction:column;background:var(--color-background-primary);overflow:hidden";
+  const main=document.createElement("main");main.id="room-detail";
+  main.style.cssText="flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch";
   content.appendChild(aside);content.appendChild(main);app.appendChild(content);
-  renderHeader();renderNav();renderRoomList();renderRoomDetail();
+  renderHeader();renderNav();renderRoomList();renderRoomDetail();updateMobilePanels();
 }
 
-(async () => {
-  const app=document.getElementById("app");
-  app.innerHTML=`<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;color:var(--color-text-secondary)"><div style="width:36px;height:36px;border:3px solid var(--color-border-secondary);border-top:3px solid #c9a84c;border-radius:50%" class="spin"></div><div style="font-size:14px">Cargando datos guardados…</div></div>`;
-  await loadFromStorage();
-  render();
-})();
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
+loadData();
+render();
+
+// Service Worker
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("./sw.js").catch(()=>{});
+}
+
+window.addEventListener("resize", updateMobilePanels);
 </script>
+</body>
+</html>
