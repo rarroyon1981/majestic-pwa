@@ -1,4 +1,5 @@
-const CACHE_NAME = "majestic-pwa-v3";
+const CACHE_NAME = "majestic-pwa-v4"; // ← versión incrementada
+
 const FILES = [
   "./",
   "./index.html",
@@ -29,7 +30,15 @@ self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   const isHTML = url.pathname.endsWith(".html") || url.pathname.endsWith("/");
 
-  if (isHTML) {
+  // GitHub raw → SIEMPRE desde la red, nunca caché
+  const isGitHub = url.hostname === "raw.githubusercontent.com";
+
+  if (isGitHub) {
+    event.respondWith(
+      fetch(event.request, { cache: "no-store" })
+        .catch(() => caches.match(event.request)) // fallback offline si no hay red
+    );
+  } else if (isHTML) {
     // HTML → red primero, caché como fallback
     event.respondWith(
       fetch(event.request)
